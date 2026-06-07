@@ -1,16 +1,30 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import styles from "@/styles/Sidebar.module.css";
 
 const Sidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
+  const [userRole, setUserRole] = useState(null);
+
+  useEffect(() => {
+    const user = localStorage.getItem("user");
+    if (user) {
+      try {
+        const userData = JSON.parse(user);
+        setUserRole(userData.role);
+      } catch (e) {
+        console.error("Error parsing user data");
+      }
+    }
+  }, []);
 
   const menuItems = [
-    { path: "/dashboard", name: "Dashboard", icon: "dashboard.svg" },
-    { path: "/create-poll", name: "Create Poll", icon: "create-poll.svg" },
-    { path: "/profile", name: "Profile", icon: "profile.svg" },
+    { path: "/dashboard", name: "Dashboard", icon: "📊" },
+    { path: "/create-poll", name: "Create Poll", icon: "➕" },
+    { path: "/profile", name: "Profile", icon: "👤" },
   ];
 
   const handleLogout = () => {
@@ -22,7 +36,7 @@ const Sidebar = () => {
   return (
     <div className={styles.sidebar}>
       <div className={styles.logo}>
-        <img src="/svgs/logo.svg" alt="Logo" className={styles.logoIcon} />
+        <span className={styles.logoIcon}>🗳️</span>
         <span>Polling Platform</span>
       </div>
 
@@ -35,14 +49,14 @@ const Sidebar = () => {
               pathname === item.path ? styles.active : ""
             }`}
           >
-            <img src={`/svgs/${item.icon}`} alt={item.name} className={styles.icon} />
+            <span className={styles.icon}>{item.icon}</span>
             <span>{item.name}</span>
           </Link>
         ))}
       </nav>
 
       <button onClick={handleLogout} className={styles.logoutBtn}>
-        <img src="/svgs/logout.svg" alt="Logout" className={styles.icon} />
+        <span className={styles.icon}>🚪</span>
         <span>Logout</span>
       </button>
     </div>

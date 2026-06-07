@@ -2,11 +2,32 @@ const Vote = require('../models/Vote');
 const Poll = require('../models/Poll');
 const { sequelize } = require('../config/database');
 
+// Helper function to get poll results
+const getPollResults = async (pollId) => {
+  const votes = await Vote.findAll({
+    where: { poll_id: pollId },
+    attributes: ['option_index', [sequelize.fn('COUNT', sequelize.col('option_index')), 'count']],
+    group: ['option_index']
+  });
+  
+  const poll = await Poll.findByPk(pollId);
+  if (!poll) return [];
+  
+  const results = new Array(poll.options.length).fill(0);
+  votes.forEach(vote => {
+    results[vote.option_index] = parseInt(vote.dataValues.count);
+  });
+  
+  return results;
+};
+
 module.exports.submitVote = async (req, res) => {
   try {
     const { pollId, optionIndex } = req.body;
     const userId = req.user.id;
     const tenantId = req.tenantId;
+
+    console.log(`🗳️ Vote received - Poll: ${pollId}, User: ${userId}, Option: ${optionIndex}`);
 
     // Check if poll exists and belongs to tenant
     const poll = await Poll.findOne({
@@ -41,16 +62,30 @@ module.exports.submitVote = async (req, res) => {
       option_index: optionIndex
     });
 
+    console.log(`✅ Vote saved for poll ${pollId}`);
+
     // Get updated results
     const updatedResults = await getPollResults(pollId);
+    console.log(`📊 Updated results: ${updatedResults}`);
 
-    // Emit real-time update via Socket.IO
+    // Get Socket.IO instance
     const io = req.app.get('io');
-    io.to(`poll-${pollId}`).emit('vote-update', {
-      pollId,
-      results: updatedResults,
-      options: poll.options
-    });
+    if (!io) {
+      console.error('❌ Socket.IO not found in app!');
+    } else {
+      const roomName = `poll-${pollId}`;
+      console.log(`📡 Emitting vote-update to room: ${roomName}`);
+      
+      // Emit to all clients in the poll room
+      io.to(roomName).emit('vote-update', {
+        pollId: parseInt(pollId),
+        results: updatedResults,
+        options: poll.options,
+        timestamp: new Date().toISOString()
+      });
+      
+      console.log(`✅ Vote-update emitted to room ${roomName}`);
+    }
 
     res.json({
       success: true,
@@ -89,23 +124,4 @@ module.exports.checkUserVote = async (req, res) => {
     console.error('Check vote error:', error);
     res.status(500).json({ error: 'Failed to check vote status' });
   }
-};
-
-// Helper function
-const getPollResults = async (pollId) => {
-  const votes = await Vote.findAll({
-    where: { poll_id: pollId },
-    attributes: ['option_index', [sequelize.fn('COUNT', sequelize.col('option_index')), 'count']],
-    group: ['option_index']
-  });
-  
-  const poll = await Poll.findByPk(pollId);
-  if (!poll) return [];
-  
-  const results = new Array(poll.options.length).fill(0);
-  votes.forEach(vote => {
-    results[vote.option_index] = parseInt(vote.dataValues.count);
-  });
-  
-  return results;
 };

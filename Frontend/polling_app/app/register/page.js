@@ -1,8 +1,9 @@
+// src/app/register/page.js (simplified version)
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import api from "@/utils/api";
+import { register, isAuthenticated } from "@/utils/auth";
 import styles from "@/styles/Register.module.css";
 
 export default function Register() {
@@ -17,8 +18,15 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.push("/dashboard");
+    }
+  }, [router]);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (error) setError("");
   };
 
   const handleSubmit = async (e) => {
@@ -32,38 +40,40 @@ export default function Register() {
       return;
     }
 
-    try {
-      const response = await api.post("/auth/register", {
-        tenantName: formData.tenantName,
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-      });
-      
-      const { token, user } = response.data;
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
-      
-      router.push("/dashboard");
-    } catch (err) {
-      setError(err.response?.data?.error || "Registration failed");
-    } finally {
+    if (formData.password.length < 6) {
+      setError("Password must be at least 6 characters");
       setLoading(false);
+      return;
     }
+
+    const result = await register({
+      tenantName: formData.tenantName,
+      name: formData.name,
+      email: formData.email,
+      password: formData.password,
+    });
+    
+    if (result.success) {
+      router.push("/dashboard");
+    } else {
+      setError(result.error);
+    }
+    
+    setLoading(false);
   };
 
   return (
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <img src="/svgs/register.svg" alt="Register" className={styles.icon} />
+          <div className={styles.icon}>📝</div>
           <h1>Create Account</h1>
           <p>Join the polling platform today</p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.inputGroup}>
-            <label>Company Name</label>
+            <label>Company Name *</label>
             <input
               type="text"
               name="tenantName"
@@ -72,10 +82,11 @@ export default function Register() {
               required
               placeholder="Enter your company name"
             />
+            <small>If company exists, you'll join it automatically</small>
           </div>
 
           <div className={styles.inputGroup}>
-            <label>Full Name</label>
+            <label>Full Name *</label>
             <input
               type="text"
               name="name"
@@ -87,7 +98,7 @@ export default function Register() {
           </div>
 
           <div className={styles.inputGroup}>
-            <label>Email Address</label>
+            <label>Email Address *</label>
             <input
               type="email"
               name="email"
@@ -99,19 +110,19 @@ export default function Register() {
           </div>
 
           <div className={styles.inputGroup}>
-            <label>Password</label>
+            <label>Password *</label>
             <input
               type="password"
               name="password"
               value={formData.password}
               onChange={handleChange}
               required
-              placeholder="Create a password"
+              placeholder="Create a password (min 6 characters)"
             />
           </div>
 
           <div className={styles.inputGroup}>
-            <label>Confirm Password</label>
+            <label>Confirm Password *</label>
             <input
               type="password"
               name="confirmPassword"

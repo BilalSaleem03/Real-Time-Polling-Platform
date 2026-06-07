@@ -42,9 +42,18 @@ module.exports.register = async (req, res) => {
       }, { transaction });
       isNewTenant = true;
       userRole = 'admin'; // First user becomes admin
-      console.log(`✅ Created new tenant: ${tenantName}`);
+      console.log(`✅ Created new tenant: ${tenantName} with admin user`);
     } else {
       console.log(`📌 Using existing tenant: ${tenantName} (ID: ${tenant.id})`);
+      // Check if this is the first user of the tenant (should be admin)
+      const userCount = await User.count({ where: { tenant_id: tenant.id } });
+      if (userCount === 0) {
+        userRole = 'admin'; // First user in existing tenant becomes admin
+        console.log(`👑 First user in ${tenantName} becomes admin`);
+      } else {
+        userRole = 'member'; // Additional users become members
+        console.log(`👤 New member joining ${tenantName}`);
+      }
     }
 
     // Create user
@@ -61,6 +70,8 @@ module.exports.register = async (req, res) => {
 
     // Generate token
     const token = generateToken(user.id);
+
+    console.log(`✅ User created: ${email}, Role: ${userRole}, Tenant: ${tenantName}`);
 
     res.status(201).json({
       success: true,
@@ -81,7 +92,6 @@ module.exports.register = async (req, res) => {
     await transaction.rollback();
     console.error('Register error:', error);
     
-    // Handle unique constraint violation
     if (error.name === 'SequelizeUniqueConstraintError') {
       return res.status(400).json({ error: 'Tenant name or email already exists' });
     }
@@ -99,8 +109,12 @@ module.exports.login = async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    // Find user
-    const user = await User.findOne({ where: { email } });
+    // Find user with role included
+    const user = await User.findOne({ 
+      where: { email },
+      attributes: ['id', 'email', 'name', 'tenant_id', 'role', 'password_hash']
+    });
+    
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -117,6 +131,8 @@ module.exports.login = async (req, res) => {
     // Generate token
     const token = generateToken(user.id);
 
+    console.log(`✅ User logged in: ${email}, Role: ${user.role}, Tenant: ${tenant.name}`);
+
     res.json({
       success: true,
       token,
@@ -126,7 +142,7 @@ module.exports.login = async (req, res) => {
         name: user.name,
         tenantId: user.tenant_id,
         tenantName: tenant.name,
-        role: user.role
+        role: user.role // Make sure role is included
       }
     });
 
@@ -140,6 +156,8 @@ module.exports.login = async (req, res) => {
 module.exports.getMe = async (req, res) => {
   try {
     const tenant = await Tenant.findByPk(req.user.tenant_id);
+    
+    console.log(`📋 Getting user info: ${req.user.email}, Role: ${req.user.role}`);
     
     res.json({
       id: req.user.id,
@@ -158,8 +176,11 @@ module.exports.getMe = async (req, res) => {
 // GET ALL USERS IN MY TENANT (for admin dashboard)
 module.exports.getTenantUsers = async (req, res) => {
   try {
+    console.log(`🔍 Checking admin access for user: ${req.user.email}, Role: ${req.user.role}`);
+    
     // Check if user is admin
     if (req.user.role !== 'admin') {
+      console.log(`❌ Access denied: User ${req.user.email} is not admin (role: ${req.user.role})`);
       return res.status(403).json({ error: 'Only admins can view all users' });
     }
 
@@ -168,6 +189,8 @@ module.exports.getTenantUsers = async (req, res) => {
       attributes: ['id', 'email', 'name', 'role', 'created_at']
     });
 
+    console.log(`✅ Found ${users.length} users in tenant ${req.tenantId}`);
+    
     res.json({
       success: true,
       users

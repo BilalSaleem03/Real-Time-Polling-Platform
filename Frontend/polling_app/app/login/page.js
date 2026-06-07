@@ -1,8 +1,9 @@
+// src/app/login/page.js (simplified version)
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import api from "@/utils/api";
+import { login, isAuthenticated } from "@/utils/auth";
 import styles from "@/styles/Login.module.css";
 
 export default function Login() {
@@ -12,31 +13,34 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    // Redirect if already logged in
+    if (isAuthenticated()) {
+      router.push("/dashboard");
+    }
+  }, [router]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    try {
-      const response = await api.post("/auth/login", { email, password });
-      const { token, user } = response.data;
-      
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
-      
+    const result = await login(email, password);
+    
+    if (result.success) {
       router.push("/dashboard");
-    } catch (err) {
-      setError(err.response?.data?.error || "Login failed");
-    } finally {
-      setLoading(false);
+    } else {
+      setError(result.error);
     }
+    
+    setLoading(false);
   };
 
   return (
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <img src="/svgs/login.svg" alt="Login" className={styles.icon} />
+          <div className={styles.icon}>🔐</div>
           <h1>Welcome Back</h1>
           <p>Login to continue to Polling Platform</p>
         </div>

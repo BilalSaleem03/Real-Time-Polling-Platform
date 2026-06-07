@@ -9,7 +9,11 @@ const Navbar = () => {
   useEffect(() => {
     const userData = localStorage.getItem("user");
     if (userData) {
-      setUser(JSON.parse(userData));
+      try {
+        setUser(JSON.parse(userData));
+      } catch (e) {
+        console.error("Error parsing user data");
+      }
     }
   }, []);
 
@@ -24,11 +28,11 @@ const Navbar = () => {
       
       <div className={styles.userInfo}>
         <div className={styles.userAvatar}>
-          {user?.name?.charAt(0) || "U"}
+          {user?.name?.charAt(0) || user?.email?.charAt(0) || "U"}
         </div>
         <div className={styles.userDetails}>
-          <span className={styles.userName}>{user?.name}</span>
-          <span className={styles.userTenant}>{user?.tenantName}</span>
+          <span className={styles.userName}>{user?.name || "User"}</span>
+          <span className={styles.userTenant}>{user?.tenantName || "Loading..."}</span>
         </div>
       </div>
     </nav>
