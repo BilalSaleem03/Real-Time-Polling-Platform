@@ -24,8 +24,9 @@ const Sidebar = () => {
   const menuItems = [
     { path: "/dashboard", name: "Dashboard", icon: "📊" },
     { path: "/create-poll", name: "Create Poll", icon: "➕" },
+    { path: "/analytics", name: "Analytics", icon: "📈" },  // NEW
     { path: "/profile", name: "Profile", icon: "👤" },
-  ];
+    ];
 
   const handleLogout = () => {
     localStorage.removeItem("token");

@@ -1,9 +1,11 @@
 const Vote = require('../models/Vote');
 const Poll = require('../models/Poll');
 const { sequelize } = require('../config/database');
+const CacheService = require('../services/cacheService');
+const { sendVoteEvent } = require('../services/voteProducer');
 
-// Helper function to get poll results
-const getPollResults = async (pollId) => {
+// Helper function to get poll results from database
+const getPollResultsFromDB = async (pollId) => {
   const votes = await Vote.findAll({
     where: { poll_id: pollId },
     attributes: ['option_index', [sequelize.fn('COUNT', sequelize.col('option_index')), 'count']],
@@ -46,37 +48,72 @@ module.exports.submitVote = async (req, res) => {
       return res.status(400).json({ error: 'Invalid option' });
     }
 
-    // Check if already voted
+    // Check Redis cache for duplicate vote (FAST)
+    const hasVoted = await CacheService.hasUserVoted(pollId, userId);
+    if (hasVoted) {
+      console.log(`⚠️ User ${userId} already voted in poll ${pollId} (checked via Redis)`);
+      return res.status(400).json({ error: 'You have already voted in this poll' });
+    }
+
+    // Double-check database for duplicate (SAFETY)
     const existingVote = await Vote.findOne({
       where: { poll_id: pollId, user_id: userId }
     });
 
     if (existingVote) {
+      await CacheService.markUserVoted(pollId, userId, optionIndex);
       return res.status(400).json({ error: 'You have already voted in this poll' });
     }
 
-    // Submit vote
+    // Submit vote to database
     await Vote.create({
       poll_id: pollId,
       user_id: userId,
       option_index: optionIndex
     });
 
-    console.log(`✅ Vote saved for poll ${pollId}`);
+    console.log(`✅ Vote saved to database for poll ${pollId}`);
 
-    // Get updated results
-    const updatedResults = await getPollResults(pollId);
+    // Mark user as voted in Redis (24 hours TTL)
+    await CacheService.markUserVoted(pollId, userId, optionIndex, 86400);
+    
+    // Update vote count in Redis
+    await CacheService.updateVoteCount(pollId, optionIndex);
+    
+    // Update tenant stats
+    await CacheService.updateTenantStats(tenantId, 'totalVotes', 1);
+
+    // Send to Kafka for background processing (non-blocking)
+    // This won't slow down the response
+    sendVoteEvent({
+      pollId,
+      optionIndex,
+      userId,
+      tenantId,
+      timestamp: new Date().toISOString(),
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    }).catch(err => console.error('Kafka send error:', err.message));
+
+    // Get updated results (try Redis first)
+    let updatedResults = await CacheService.getVoteCounts(pollId, poll.options.length);
+    
+    if (!updatedResults) {
+      updatedResults = await getPollResultsFromDB(pollId);
+      await CacheService.setPollResults(pollId, updatedResults, 3600);
+    }
+    
     console.log(`📊 Updated results: ${updatedResults}`);
 
-    // Get Socket.IO instance
+    // Clear tenant polls cache
+    await CacheService.setActivePolls(tenantId, null, 0);
+    
+    // Get Socket.IO instance and emit update
     const io = req.app.get('io');
-    if (!io) {
-      console.error('❌ Socket.IO not found in app!');
-    } else {
+    if (io) {
       const roomName = `poll-${pollId}`;
       console.log(`📡 Emitting vote-update to room: ${roomName}`);
       
-      // Emit to all clients in the poll room
       io.to(roomName).emit('vote-update', {
         pollId: parseInt(pollId),
         results: updatedResults,
@@ -112,13 +149,27 @@ module.exports.checkUserVote = async (req, res) => {
       return res.status(404).json({ error: 'Poll not found' });
     }
 
-    const vote = await Vote.findOne({
-      where: { poll_id: pollId, user_id: userId }
-    });
+    // Check Redis cache first (FAST)
+    let hasVoted = await CacheService.hasUserVoted(pollId, userId);
+    let voteOption = null;
+    
+    // If not in Redis, check database
+    if (!hasVoted) {
+      const vote = await Vote.findOne({
+        where: { poll_id: pollId, user_id: userId }
+      });
+      
+      hasVoted = !!vote;
+      voteOption = vote?.option_index || null;
+      
+      if (hasVoted) {
+        await CacheService.markUserVoted(pollId, userId, voteOption);
+      }
+    }
     
     res.json({
-      hasVoted: !!vote,
-      voteOption: vote?.option_index || null
+      hasVoted,
+      voteOption
     });
   } catch (error) {
     console.error('Check vote error:', error);

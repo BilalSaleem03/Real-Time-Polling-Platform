@@ -34,33 +34,39 @@ export default function CreatePoll() {
     e.preventDefault();
     
     if (!title.trim()) {
-      alert("Please enter a poll title");
-      return;
+        alert("Please enter a poll title");
+        return;
     }
     
     const validOptions = options.filter(opt => opt.trim());
     if (validOptions.length < 2) {
-      alert("Please add at least 2 options");
-      return;
+        alert("Please add at least 2 options");
+        return;
     }
 
     setLoading(true);
     
     try {
-      const response = await api.post("/polls", {
+        const response = await api.post("/polls", {
         title,
         description,
         options: validOptions,
-      });
-      
-      router.push(`/poll/${response.data.poll.id}`);
+        });
+        
+        console.log("Poll created successfully:", response.data.poll);
+        
+        // Force clear the dashboard cache by making a refresh request
+        await api.get("/polls?refresh=true");
+        
+        // Redirect to the new poll
+        router.push(`/poll/${response.data.poll.id}`);
     } catch (error) {
-      console.error("Error creating poll:", error);
-      alert("Failed to create poll");
+        console.error("Error creating poll:", error);
+        alert("Failed to create poll");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+    };
 
   return (
     <div className={styles.container}>

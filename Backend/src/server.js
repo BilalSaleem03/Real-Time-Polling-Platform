@@ -1,8 +1,6 @@
 const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
-require("dotenv").config({
-    path: path.join(__dirname, "../.env")
-});
 const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
@@ -10,6 +8,11 @@ const cors = require("cors");
 
 
 const { connectDB } = require("./config/database");
+const { redis, testRedisConnection } = require("./config/redis");
+const { globalRateLimiter } = require("./middleware/rateLimiter");
+const { startVoteConsumer, stopVoteConsumer } = require("./services/voteConsumer");
+const { connectProducer } = require("./config/kafka");
+
 
 // Import models
 const Tenant = require("./models/Tenant");
@@ -32,79 +35,47 @@ Vote.belongsTo(User, { foreignKey: 'user_id' });
 const authRoutes = require("./routes/auth");
 const pollRoutes = require("./routes/poll");
 const voteRoutes = require("./routes/vote");
+const analyticsRoutes = require("./routes/analytics");
 
 const app = express();
 const server = http.createServer(app);
 
-// Initialize Socket.IO with proper configuration
+// Initialize Socket.IO
 const io = socketIo(server, {
   cors: {
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
     methods: ["GET", "POST"],
     credentials: true,
-    transports: ['websocket', 'polling'],
-    allowUpgrades: true,
+    transports: ['polling'],
+    allowUpgrades: false,
     pingTimeout: 60000,
     pingInterval: 25000,
-    allowEIO3: true,
-    wsEngine: 'ws'
   },
   path: '/socket.io/',
   serveClient: false,
-  // Suppress specific error messages
-  logger: {
-    error: (err) => {
-      // Only log real errors, not WebSocket upgrade messages
-      if (err.message && !err.message.includes('websocket error')) {
-        console.error('Socket error:', err);
-      }
-    }
-  }
 });
 
-// Make io available to routes
 app.set('io', io);
 
-// Store connected sockets for debugging
+// Store connected sockets
 const connectedSockets = new Map();
 
-// Socket.IO connection handling with error handling
+// Socket.IO connection handling
 io.on("connection", (socket) => {
   console.log("🔌 New client connected:", socket.id);
   connectedSockets.set(socket.id, { id: socket.id, time: new Date() });
 
-  // Handle socket errors silently
-  socket.on("error", (error) => {
-    if (error.message && !error.message.includes('websocket error')) {
-      console.error(`Socket ${socket.id} error:`, error);
-    }
-  });
-
-  // Join a specific poll room
   socket.on("join-poll", (pollId) => {
     try {
       const roomName = `poll-${pollId}`;
       socket.join(roomName);
       console.log(`✅ Socket ${socket.id} joined room: ${roomName}`);
-      
-      // Send confirmation back to client
-      socket.emit("joined-poll", { 
-        pollId: parseInt(pollId), 
-        room: roomName,
-        message: "Successfully joined poll room"
-      });
-      
-      // Get room size and emit to client
-      const roomSize = io.sockets.adapter.rooms.get(roomName)?.size || 0;
-      socket.emit("room-info", { pollId: parseInt(pollId), listeners: roomSize });
-      
+      socket.emit("joined-poll", { pollId: parseInt(pollId), room: roomName });
     } catch (error) {
       console.error(`Error joining poll room:`, error);
-      socket.emit("error", { message: "Failed to join poll room" });
     }
   });
 
-  // Leave poll room
   socket.on("leave-poll", (pollId) => {
     try {
       const roomName = `poll-${pollId}`;
@@ -115,47 +86,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Test ping-pong for connection testing
-  socket.on("ping", () => {
-    socket.emit("pong", { timestamp: new Date().toISOString() });
-  });
-
-  // Get room info
-  socket.on("get-room-info", (pollId) => {
-    try {
-      const roomName = `poll-${pollId}`;
-      const roomSize = io.sockets.adapter.rooms.get(roomName)?.size || 0;
-      socket.emit("room-info", { pollId: parseInt(pollId), listeners: roomSize });
-    } catch (error) {
-      console.error(`Error getting room info:`, error);
-    }
-  });
-
   socket.on("disconnect", (reason) => {
     console.log("🔌 Client disconnected:", socket.id, "Reason:", reason);
     connectedSockets.delete(socket.id);
   });
 });
-
-// Handle upgrade errors globally
-io.engine.on("connection_error", (err) => {
-  if (err.message && !err.message.includes('websocket error')) {
-    console.log("Connection error:", err.message);
-  }
-});
-
-// Debug: Log room sizes periodically (every 60 seconds)
-setInterval(() => {
-  if (connectedSockets.size > 0) {
-    console.log("\n📊 Socket Status:");
-    console.log(`   Active connections: ${connectedSockets.size}`);
-    io.sockets.adapter.rooms.forEach((value, key) => {
-      if (key.startsWith('poll-')) {
-        console.log(`   Room ${key}: ${value.size} clients`);
-      }
-    });
-  }
-}, 60000);
 
 // Middleware
 app.use(cors({
@@ -164,8 +99,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/api', globalRateLimiter);
 
-// Request logging middleware
+// Request logging
 app.use((req, res, next) => {
   console.log(`📝 ${req.method} ${req.path}`);
   next();
@@ -175,30 +111,34 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/polls", pollRoutes);
 app.use("/api/votes", voteRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Root endpoint
 app.get("/", (req, res) => {
   res.json({ 
-    message: "Polling Platform API", 
-    version: "1.0.0",
-    endpoints: {
-      auth: "/api/auth",
-      polls: "/api/polls",
-      votes: "/api/votes"
+    message: "Polling Platform API with Redis & Kafka", 
+    version: "3.0.0",
+    features: {
+      caching: "Redis",
+      rateLimiting: "Enabled",
+      realtime: "Socket.IO",
+      streaming: "Kafka (Analytics)"
     }
   });
 });
 
-// Health check endpoint
-app.get("/health", (req, res) => {
+// Health check
+app.get("/health", async (req, res) => {
+  const redisStatus = await testRedisConnection();
   res.json({ 
     status: "OK", 
     timestamp: new Date().toISOString(),
+    redis: redisStatus ? "connected" : "disconnected",
     connections: connectedSockets.size
   });
 });
 
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Application error:', err.stack);
   res.status(500).json({ error: "Something went wrong!" });
@@ -213,6 +153,17 @@ app.use((req, res) => {
 const startServer = async () => {
   try {
     await connectDB();
+    await testRedisConnection();
+    
+    // Start Kafka (don't fail if not available)
+    try {
+      await connectProducer();
+      await startVoteConsumer();
+      console.log('✅ Kafka services started');
+    } catch (kafkaError) {
+      console.warn('⚠️ Kafka not available - analytics features disabled');
+      console.warn('   To enable Kafka, start it with: docker-compose up -d');
+    }
     
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
@@ -221,23 +172,29 @@ const startServer = async () => {
       console.log("=".repeat(50));
       console.log(`📡 HTTP Server: http://localhost:${PORT}`);
       console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
-      console.log(`📊 Socket.IO ready for connections`);
+      console.log(`🗄️  Redis: Connected & Caching Enabled`);
+      console.log(`⚡ Rate Limiting: Active`);
+      console.log(`📊 Kafka: ${process.env.KAFKA_ENABLED === 'true' ? 'Enabled' : 'Disabled'}`);
       console.log("=".repeat(50) + "\n");
     });
     
   } catch (error) {
     console.error("Failed to start server:", error);
+    if (error.code === 'ECONNREFUSED') {
+      console.error('Make sure PostgreSQL is running');
+    }
     process.exit(1);
   }
 };
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
+  await stopVoteConsumer();
+  await redis.quit();
   io.close(() => {
-    console.log('Socket.IO closed');
     server.close(() => {
-      console.log('HTTP server closed');
+      console.log('Server closed');
       process.exit(0);
     });
   });

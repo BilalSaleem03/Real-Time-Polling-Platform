@@ -181,3 +181,61 @@
     opacity: 1;
   }
 }
+/* Add to existing PollDetail.module.css */
+
+.analyticsInfo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: linear-gradient(135deg, #f8f9fa, #ffffff);
+  border-radius: 12px;
+}
+
+.analyticsCard {
+  text-align: center;
+  padding: 0.75rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.analyticsCard span {
+  display: block;
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.analyticsCard strong {
+  font-size: 1.2rem;
+  color: #6366f1;
+}
+
+.connected {
+  color: #10b981;
+  font-size: 0.75rem;
+  animation: pulse 2s infinite;
+}
+
+.disconnected {
+  color: #ef4444;
+  font-size: 0.75rem;
+}
+
+.warning {
+  background: #fef3c7;
+  color: #d97706;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}

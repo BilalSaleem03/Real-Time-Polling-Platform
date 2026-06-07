@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getSocket, initializeSocket, testSocketConnection } from "@/utils/socket";
+import { getSocket, initializeSocket } from "@/utils/socket";
 import api from "@/utils/api";
 import VoteChart from "@/components/VoteChart";
 import styles from "@/styles/PollDetail.module.css";
@@ -15,19 +15,19 @@ export default function PollDetail() {
   const [userVote, setUserVote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [voting, setVoting] = useState(false);
+  const [analytics, setAnalytics] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef(null);
 
   useEffect(() => {
     if (id) {
       fetchPollData();
+      fetchPollAnalytics();
       setupSocket();
     }
     
-    // Cleanup on unmount
     return () => {
       if (socketRef.current && id) {
-        console.log("Cleaning up: leaving poll room", id);
         socketRef.current.emit("leave-poll", id);
       }
     };
@@ -35,57 +35,34 @@ export default function PollDetail() {
 
   const setupSocket = () => {
     try {
-      // Initialize socket connection
       const socket = initializeSocket();
       socketRef.current = socket;
       
-      // Remove existing listeners to avoid duplicates
-      socket.off("connect");
-      socket.off("vote-update");
-      socket.off("joined-poll");
-      
-      // Handle connection
       socket.on("connect", () => {
-        console.log("✅ Socket connected, joining poll room:", id);
         setSocketConnected(true);
         socket.emit("join-poll", id);
-        
-        // Test ping
-        socket.emit("ping");
       });
       
-      // Handle join confirmation
       socket.on("joined-poll", (data) => {
-        console.log("✅ Successfully joined:", data);
+        console.log("Joined poll room:", data);
       });
       
-      // Handle vote updates
       socket.on("vote-update", (data) => {
-        console.log("📡 Received vote-update:", data);
         if (data.pollId === parseInt(id)) {
-          console.log("Updating results:", data.results);
           setResults(data.results);
+          // Refresh analytics after vote
+          fetchPollAnalytics();
         }
       });
       
-      // Handle pong response
-      socket.on("pong", () => {
-        console.log("🏓 Pong received, connection is alive");
-      });
-      
-      // Handle connection errors
       socket.on("connect_error", (error) => {
-        console.error("Socket connection error:", error);
         setSocketConnected(false);
       });
       
-      // Check if already connected
       if (socket.connected) {
-        console.log("Socket already connected, joining room:", id);
-        socket.emit("join-poll", id);
         setSocketConnected(true);
+        socket.emit("join-poll", id);
       }
-      
     } catch (error) {
       console.error("Error setting up socket:", error);
     }
@@ -93,14 +70,10 @@ export default function PollDetail() {
 
   const fetchPollData = async () => {
     try {
-      console.log("Fetching poll data for ID:", id);
       const [pollRes, voteStatusRes] = await Promise.all([
         api.get(`/polls/${id}`),
         api.get(`/votes/check/${id}`)
       ]);
-      
-      console.log("Poll data:", pollRes.data);
-      console.log("Vote status:", voteStatusRes.data);
       
       setPoll(pollRes.data.poll);
       setResults(pollRes.data.results || new Array(pollRes.data.poll.options.length).fill(0));
@@ -116,6 +89,15 @@ export default function PollDetail() {
     }
   };
 
+  const fetchPollAnalytics = async () => {
+    try {
+      const response = await api.get(`/analytics/poll/${id}`);
+      setAnalytics(response.data.analytics);
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+    }
+  };
+
   const handleVote = async (optionIndex) => {
     if (hasVoted) {
       alert("You have already voted in this poll");
@@ -123,7 +105,6 @@ export default function PollDetail() {
     }
 
     setVoting(true);
-    console.log("Submitting vote for option:", optionIndex);
     
     try {
       const response = await api.post("/votes", {
@@ -131,13 +112,10 @@ export default function PollDetail() {
         optionIndex
       });
       
-      console.log("Vote response:", response.data);
       setResults(response.data.results);
       setHasVoted(true);
       setUserVote(optionIndex);
-      
-      // The socket will update other clients, but we already updated this one
-      console.log("Vote submitted successfully!");
+      await fetchPollAnalytics();
       
     } catch (error) {
       console.error("Error voting:", error);
@@ -158,7 +136,7 @@ export default function PollDetail() {
 
   if (!poll) return null;
 
-  const totalVotes = results.reduce((sum, count) => sum + count, 0);
+  const totalVotes = results.reduce((sum, count) => sum + parseInt(count), 0);
 
   return (
     <div className={styles.container}>
@@ -174,29 +152,54 @@ export default function PollDetail() {
           </span>
         </div>
 
+        {/* Analytics Section */}
+        {analytics && (
+          <div className={styles.analyticsInfo}>
+            <div className={styles.analyticsCard}>
+              <span>⚡ Vote Velocity</span>
+              <strong>{analytics.recentVelocity || 0} votes/min</strong>
+            </div>
+            <div className={styles.analyticsCard}>
+              <span>🏆 Global Rank</span>
+              <strong>#{analytics.leaderboardRank || 'N/A'}</strong>
+            </div>
+            <div className={styles.analyticsCard}>
+              <span>📊 Total Votes</span>
+              <strong>{analytics.totalVotes || totalVotes}</strong>
+            </div>
+          </div>
+        )}
+
         <div className={styles.voteSection}>
           <h3>{hasVoted ? "Vote Results" : "Cast Your Vote"}</h3>
           
-          {hasVoted && <VoteChart options={poll.options} results={results} />}
+          {hasVoted && results.length > 0 && (
+            <VoteChart options={poll.options} results={results} />
+          )}
           
           <div className={styles.optionsList}>
-            {poll.options.map((option, index) => (
-              <button
-                key={index}
-                onClick={() => handleVote(index)}
-                disabled={hasVoted || voting}
-                className={`${styles.optionBtn} ${
-                  userVote === index ? styles.selected : ""
-                }`}
-              >
-                <span className={styles.optionText}>{option}</span>
-                {hasVoted && (
-                  <span className={styles.voteCount}>
-                    {results[index]} votes ({totalVotes > 0 ? ((results[index] / totalVotes) * 100).toFixed(1) : 0}%)
-                  </span>
-                )}
-              </button>
-            ))}
+            {poll.options.map((option, index) => {
+              const voteCount = results[index] || 0;
+              const percentage = totalVotes > 0 ? ((voteCount / totalVotes) * 100).toFixed(1) : 0;
+              
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleVote(index)}
+                  disabled={hasVoted || voting}
+                  className={`${styles.optionBtn} ${
+                    userVote === index ? styles.selected : ""
+                  }`}
+                >
+                  <span className={styles.optionText}>{option}</span>
+                  {hasVoted && (
+                    <span className={styles.voteCount}>
+                      {voteCount} votes ({percentage}%)
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
           
           {hasVoted && (
