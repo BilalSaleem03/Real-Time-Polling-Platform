@@ -1,0 +1,96 @@
+.card {
+  background: var(--white);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: var(--shadow);
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.header h3 {
+  color: var(--dark-color);
+  font-size: 1.2rem;
+}
+
+.status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.active {
+  background: #d1fae5;
+  color: var(--secondary-color);
+}
+
+.warning {
+  background: #fed7aa;
+  color: var(--warning-color);
+}
+
+.closed {
+  background: #fee;
+  color: var(--danger-color);
+}
+
+.description {
+  color: var(--gray-color);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.options {
+  margin: 1rem 0;
+}
+
+.optionPreview {
+  color: var(--dark-color);
+  font-size: 0.9rem;
+  margin: 0.25rem 0;
+}
+
+.more {
+  color: var(--primary-color);
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.footer span {
+  color: var(--gray-color);
+  font-size: 0.85rem;
+}
+
+.voteBtn {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.voteBtn:hover {
+  color: var(--primary-dark);
+}

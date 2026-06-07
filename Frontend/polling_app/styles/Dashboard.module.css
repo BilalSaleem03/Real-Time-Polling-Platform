@@ -1,0 +1,109 @@
+.container {
+  animation: fadeIn 0.3s ease;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header h1 {
+  font-size: 2rem;
+  color: var(--dark-color);
+}
+
+.createBtn {
+  background: var(--primary-color);
+  color: var(--white);
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.createBtn:hover {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+}
+
+.pollGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.empty {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--white);
+  border-radius: var(--border-radius);
+}
+
+.empty img {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.empty h3 {
+  color: var(--dark-color);
+  margin-bottom: 0.5rem;
+}
+
+.empty p {
+  color: var(--gray-color);
+  margin-bottom: 1.5rem;
+}
+
+.emptyBtn {
+  background: var(--primary-color);
+  color: var(--white);
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid var(--light-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .pollGrid {
+    grid-template-columns: 1fr;
+  }
+}
